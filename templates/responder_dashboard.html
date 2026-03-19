@@ -1,0 +1,212 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="refresh" content="20" />
+  <title>CEARS | Responder Panel</title>
+
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+
+  <style>
+    body {
+      background: #0f172a;
+      color: #f8fafc;
+      font-family: "Segoe UI", sans-serif;
+    }
+
+    .glass-card {
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 15px;
+      padding: 25px;
+    }
+
+    .table {
+      color: #cbd5e1;
+      vertical-align: middle;
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .addr-search {
+      color: #38bdf8;
+      font-size: 0.85rem;
+      display: block;
+      font-weight: 500;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="container mt-5">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h1><span class="text-danger">●</span> Responder Panel</h1>
+
+      <div>
+        <span class="me-3 text-secondary">
+          User: <strong>{{ request.user.username }}</strong>
+        </span>
+        <a href="{% url 'logout' %}" class="btn btn-outline-danger btn-sm">
+          Logout
+        </a>
+      </div>
+    </div>
+
+    <div class="glass-card shadow-lg">
+      <div class="table-responsive">
+        <table class="table table-dark table-hover">
+          <thead>
+            <tr>
+              <th>Victim & Time</th>
+              <th>Type & Location</th>
+              <th>Distance</th>
+              <th class="text-center">Actions</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            {% for inc in incidents %}
+            <tr>
+              <!-- Victim -->
+              <td>
+                <span class="fw-bold text-white fs-5">
+                  {{ inc.user.username }} </span><br />
+                <small class="text-muted">
+                  {{ inc.timestamp|date:"h:i A" }}
+                </small>
+
+                {% if inc.status == 'In Progress' and inc.volunteer == request.user %}
+                <br />
+                <button class="btn btn-sm btn-info mt-2 px-3" data-bs-toggle="modal" data-bs-target="#m{{ inc.id }}">
+                  View Details
+                </button>
+
+                <!-- Modal -->
+                <div class="modal fade" id="m{{ inc.id }}" tabindex="-1">
+                  <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content bg-dark text-white border-info">
+                      <div class="modal-header border-secondary">
+                        <h5 class="modal-title">
+                          Emergency Contact: {{ inc.user.username }}
+                        </h5>
+                        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                      </div>
+
+                      <div class="modal-body">
+                        <p>
+                          <strong>Phone:</strong>
+                          <span class="text-warning">
+                            {{ inc.phone_number }}
+                          </span>
+                        </p>
+                        <p>
+                          <strong>Info:</strong><br />
+                          {{ inc.description }}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                {% endif %}
+              </td>
+
+              <!-- Type & Location -->
+              <td>
+                <span class="badge bg-danger mb-1">
+                  {{ inc.emergency_type }} </span><br />
+
+                <small class="addr-search" data-lat="{{ inc.lat }}" data-lng="{{ inc.lng }}">
+                  {{ inc.location_name|default:"Locating..." }}
+                </small>
+              </td>
+
+              <!-- Distance -->
+              <td>
+                <span class="text-warning fw-bold">
+                  {{ inc.dist|default:"---" }}
+                </span>
+              </td>
+
+              <!-- Actions -->
+              <td class="text-center">
+                <div class="d-flex justify-content-center gap-2">
+                  <a href="https://www.google.com/maps?q={{ inc.lat }},{{ inc.lng }}" target="_blank"
+                    class="btn btn-sm btn-outline-light">
+                    Map
+                  </a>
+
+                  {% if inc.status == 'Pending' %}
+                  <a href="{% url 'accept_incident' inc.id %}" class="btn btn-sm btn-warning">
+                    Accept
+                  </a>
+
+                  {% elif inc.status == 'In Progress' and inc.volunteer == request.user %}
+                  <a href="{% url 'resolve_incident' inc.id %}" class="btn btn-sm btn-success">
+                    Resolve
+                  </a>
+
+                  {% elif inc.status == 'In Progress' %}
+                  <span class="badge bg-secondary">Assigned</span>
+                  {% endif %}
+                </div>
+              </td>
+            </tr>
+
+            {% empty %}
+            <tr>
+              <td colspan="4" class="text-center py-4 text-muted">
+                No active emergency alerts.
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    function reverseGeocode() {
+      document.querySelectorAll(".addr-search").forEach((el) => {
+        const lat = el.getAttribute("data-lat");
+        const lng = el.getAttribute("data-lng");
+
+        if (lat && lng) {
+          fetch(
+            `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lng}`,
+          )
+            .then((r) => r.json())
+            .then((d) => {
+              el.innerText = d.display_name.split(",").slice(0, 3).join(",");
+            })
+            .catch(() => {
+              el.innerText = "Location on Map";
+            });
+        }
+      });
+    }
+
+    function syncLocation(pos) {
+      fetch(
+        `/alerts/update-responder-location/?lat=${pos.coords.latitude}&lng=${pos.coords.longitude}`,
+      ).then(() => console.log("Location Synced"));
+    }
+
+    document.addEventListener("DOMContentLoaded", () => {
+      reverseGeocode();
+
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(syncLocation);
+        setInterval(() => {
+          navigator.geolocation.getCurrentPosition(syncLocation);
+        }, 30000);
+      }
+    });
+  </script>
+</body>
+
+</html>
